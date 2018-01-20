@@ -1,0 +1,19 @@
+clc;clear all;close all;
+
+%%Estimation
+spr=2;spc=2;spi=1;%subplot vars
+figure(1);
+I = imread('E:\Module5_StatisticalEstimation\assignment\imageSegmentationRepresentation\bd\69022.jpg');
+T = imread('E:\Module5_StatisticalEstimation\assignment\imageSegmentationRepresentation\bd\GT69022.png');
+I = double(rgb2gray(I)); T = double(T);
+subplot(spr, spc, spi);spi=spi+1;imshow(uint8(I));title('original');
+subplot(spr, spc, spi);spi=spi+1;imshow(uint8(T));title('ground truth');
+ir = size(I,1); ic = size(I,2);%image size
+psv = 3; psh = 3;%patch size vertical and patch size horizontal
+if psv > ir || psh > ic, disp('PATCH TOO LARGE');end
+
+for i = round(psv/2):ir-round(psv/2)
+    for j = round(psh/2):ic-round(psh/2)
+        
+    end
+end
