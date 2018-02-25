@@ -1,49 +1,123 @@
+%%Image Segmentation via Estimation
 clc;clear all;close all;
-
-%%Estimation
-spr=10;spc=3;spi=1;%subplot vars
-paramVarThresh = 800;%parameter error variation threshold
-figure(1);
-I = imread('E:\Module5_StatisticalEstimation\assignment\imageSegmentationRepresentation\bd\69022.jpg');
-T = imread('E:\Module5_StatisticalEstimation\assignment\imageSegmentationRepresentation\bd\GT69022.png');
-I = double(rgb2gray(I)); T = double(T);
-IVAR = I;
-subplot(spr, spc, spi);spi=spi+1;imshow(uint8(I));title('original');
-subplot(spr, spc, spi);spi=spi+1;imshow(uint8(T));title('ground truth');
+%% Initializations
+spr=4; spc=1; spi=1;%subplot vars
+paramVarThresh = 0.95;%parameter error variation threshold
+figNum = 1;
+figure(figNum);figNum = figNum + 1;
+OI = imread('bd/87015.jpg');T = imread('bd/GT87015.png');nam='Snake';
+% OI = imread('bd/100098.jpg');T = imread('bd/GT100098.png');nam='Bear';
+% OI = imread('bd/69022.jpg');T = imread('bd/GT69022.png');nam='Kangaroo';
+% OI = imread('bd/Plane.jpg');T = imread('bd/GTPlane.png');nam='Plane';
+I = double(rgb2gray(OI)); T = double(T);
+HI = rgb2hsv(OI);
+D = I;%stores difference in estimated intensity vs actual intensity
+Y = D;%stores estimates
+I_FINAL = I; X1 = I; X2 = I; X3 = I;
 ir = size(I,1); ic = size(I,2);%image size
-psv = 3; psh = 3;%patch size vertical and patch size horizontal
-if psv > ir || psh > ic, disp('PATCH TOO LARGE');end
+psv = 99;%patch size vertical (use only odd numbers)
+psh = 99;%patch size horizontal (use only odd numbers)
+psvw = (psv-1)/2; pshw = (psh-1)/2;%patch width on either side
+if psvw < 1, psvw=1;end; if pshw < 1, pshw=1;end;%bounds check
+%create a patch of i's and j's for use in A
+isr = linspace(1, ir, ir)'; jsc = linspace(1, ic, ic); iis = [];jjs = [];
+for i = 1:ic;iis = [iis isr];end; for i = 1:ir;jjs = [jjs; jsc];end; %#ok<*AGROW>
 
+% subplot(spr, spc, spi);spi=spi+1;imshow(uint8(I));title('original');
+% subplot(spr, spc, spi);spi=spi+1;imshow(uint8(T));title('ground truth');
+% subplot(spr, spc, spi);spi=spi+1;plot3(iis(:), jjs(:), I(:));title('3D intensity');
+if psv > ir || psh > ic || psv < 1 || psh < 1, fprintf('PATCH OUT OF BOUNDS\n');return;end
+if ~mod(psv, 2) || ~mod(psh, 2), fprintf('USE ONLY ODD NUMBERS FOR PATCH\n');return;end
+
+popMean = mean(I(:)); popVar = var(I(:)); popStd = std(I(:));
+foreBackRatio = hist(T(:), [255 0]);
+foreBackRatio = foreBackRatio(1) / foreBackRatio(2);%prior probability of foreground pix
+alpha = 0.5793;%alpha = 0.5359;%alpha = 0.5199;  48.57
+zForAlpha = norminv(alpha);
+histFG=zeros(1, 256); histBG=histFG; histTP=histFG; histTN=histFG; histFP=histFG; histFN=histFG;
+%% Processing
 highestError = -10000;
-for i = round(psv/2):ir-round(psv/2)
-    err = [];
-    for j = round(psh/2):ic-round(psh/2)
-        if psv > 2, phv = floor(psv/2); else phv=0;end;if psh > 2, phh = floor(psh/2); else phh=0;end
-        IP = I(i-phv:i+phv, j-phh:j+phh);
-        A = []; B = [];
-        for k=i-phv:i+phv
-            for kk=j-phh:j+phh
-                A = [A; k kk 1];
-                B = [B; I(k,kk)];                
-            end
-        end
-        X = linsolve(A,B);
-        dif = X(3) - I(i,j);
-        err = [err dif]; %#ok<*AGROW>
-        %if highestError < X(3), highestError = X(3);fprintf('highestError = %d at [%d,%d]\n', highestError,i,j);end
-        if dif > paramVarThresh, IVAR(i,j) = 255; else IVAR(i,j) = 0;end
-%         subplot(spr, spc, spi);spi=spi+1;imshow(uint8(IP));
+zStore = [];xa=0;xb=0;xc=0;%deleteme
+anim = [];
+tic
+for i = 1:ir
+    err = zeros(1, ic);
+    priorProb = foreBackRatio;
+    for j = 1:ic
+        pvs=i-psvw; pve=i+psvw; phs=j-pshw; phe=j+pshw;%patch st & en pos
+        if pvs<1,pvs=1;end; if phs<1,phs=1;end;%bounds check
+        if pve>ir,pve=ir;end; if phe>ic,phe=ic;end;%bounds check
+        
+        IP = I(pvs:pve, phs:phe);
+        Ai = iis(pvs:pve, phs:phe); Ai = Ai(:);
+        Aj = jjs(pvs:pve, phs:phe); Aj = Aj(:);
+        A = [Ai Aj ones(length(Ai), 1)];
+        B = I(pvs:pve, phs:phe); B = B(:);
+        %--- Least squares
+%         W = (IP-mean(mean(IP)).*ones(size(IP,1),size(IP,2))).^2;%variance
+%         W = 1./W; W = diag(W(:));%1/variance = weight          
+        
+        X = (A'*A)\(A'*B);%X = inv(A'*A)*(A'*B);%X = linsolve(A,B);
+        X1(i,j)=X(1);X2(i,j)=X(2);X3(i,j)=X(3);
+        Y(i,j) = i*X1(i,j) + j*X2(i,j) + X3(i,j);%linear        
+        D(i,j) = Y(i,j) - I(i,j);        
     end
-    if spi < (spr*spc)-2, subplot(spr, spc, spi);spi=spi+1;plot(linspace(1,length(err),length(err)),err);end
+    %---Hypothesis: Take mean after eliminating outliers and compare
+    if i==1, dV = D(i,:); else dV = [D(i,:) D(i-1,:)];end
+    maV = max(dV); miV = min(dV); haV = maV - miV; indV = find(dV > miV+haV);
+    dV(indV) = [];%eliminate half the outlier error values
+    popMean = mean(dV(:));
+    for j=1:ic
+        zScore = (D(i,j) - popMean) / popStd;
+        if zScore <= zForAlpha, 
+            I_FINAL(i,j) = 0; %histBG(I(i,j)+1) = histBG(I(i,j)+1) + 1;
+        else
+            I_FINAL(i, j) = 255; %histFG(I(i,j)+1) = histFG(I(i,j)+1) + 1;
+        end
+%         %Sensitivity Specificity
+%         if I_FINAL(i,j)==0 && T(i,j)==0, histTP(I(i,j)+1)=histTP(I(i,j)+1)+1;end
+%         if I_FINAL(i,j)==255 && T(i,j)==255, histTN(I(i,j)+1)=histTN(I(i,j)+1)+1;end
+%         if I_FINAL(i,j)==0 && T(i,j)==255, histFN(I(i,j)+1)=histFN(I(i,j)+1)+1;end
+%         if I_FINAL(i,j)==255 && T(i,j)==0, histFP(I(i,j)+1)=histFP(I(i,j)+1)+1;end
+    end
+%     if i==159, %residual plot
+%         plot(linspace(1,size(D(i,:),2),size(D(i,:),2)),D(i,:),'k');hold on;
+%     end
+    
 end
 
-figure(2);
-imshow(uint8(IVAR));title(strcat('Shows parameter variation points. Error threshold at ', num2str(paramVarThresh)));
+% plot(linspace(1,ic,ic), D(159, :),'b');
 
-figure(3);
-spr=2;spc=2;spi=1;%subplot vars
-H = imread('E:\Module5_StatisticalEstimation\assignment\imageSegmentationRepresentation\bd\69022.jpg');
-H = rgb2hsv(H);
-subplot(spr, spc, spi);spi=spi+1;imshow(H(:,:,1));
-subplot(spr, spc, spi);spi=spi+1;imshow(H(:,:,2));
-subplot(spr, spc, spi);spi=spi+1;imshow(H(:,:,3));
+%% R square
+totSumSq = sum((Y(:) - mean(Y(:)).*ones(size(Y(:)))).^2);
+SumSqRes = sum(D(:).^2);
+rSq=1-(SumSqRes/totSumSq);
+fprintf('R squared = %f\n', rSq);
+
+% %% Thresholding
+% tm = mean(D(:));
+% I_FINAL(D > tm*paramVarThresh) = 255;
+% I_FINAL(D < tm*paramVarThresh) = 0;
+% fprintf('Time taken: %fs\n', toc);
+
+% plot(linspace(1,length(zStore),length(zStore))', zStore, 'b');hold on;
+% plot(anim, 0, 'r');hold off;
+% plot(linspace(1,length(histFG),length(histFG)),histBG,linspace(1,length(histBG),length(histBG)), histFG);
+% legend('foreground', 'background'); title(strcat(nam,'. Non linear regression result')); xlabel('intensities'); ylabel('number of pixels');
+
+%%Errors
+figure(figNum);figNum = figNum + 1; mesh(D);title(strcat(nam,': Errors'));
+
+%%Sensitivity Specificity
+figure(figNum);figNum = figNum + 1;
+plot(linspace(1,length(histTP),length(histTP)),histTP,  linspace(1,length(histTN),length(histTN)), histTN,  linspace(1,length(histFP),length(histFP)), histFP,  linspace(1,length(histFN),length(histFN)), histFN);
+legend('TP', 'TN', 'FP', 'FN'); title(strcat(nam,'. Sensitivity Specificity')); xlabel('intensities'); ylabel('number of pixels');
+%% Dice Score
+dice = 2*nnz(I_FINAL&T)/(nnz(I_FINAL)+nnz(T));
+fprintf('Dice score difference between ground truth and segmented image:\n %f%%\n', dice*100); 
+        
+figure(figNum);figNum = figNum + 1;
+imshow(uint8(I_FINAL));title(strcat('Shows parameter variation points. Error threshold at ', num2str(paramVarThresh)));
+
+% figure(figNum);figNum = figNum + 1;
+% imhist(D);
