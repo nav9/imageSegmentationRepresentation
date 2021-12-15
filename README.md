@@ -1,4 +1,6 @@
-# Image Segmentation Representation
+# Image Segmentation Representation  
+Note: This project was created for a college assignment. Due to IDE usability reasons, the variable names had to be kept short and un-intuitive.  
+
 Various experimental programs in image processing.  
 The programs are very simplistic trials which may not be of much help to a professional, but can help a student who is attempting to understand or try these concepts.  
   
